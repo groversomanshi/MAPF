@@ -96,6 +96,12 @@ To visualize the generated results:
 python3 ../visualize.py input.yaml output.yaml
 ```
 
+To save as a .gif only:
+
+```
+python3 ../visualize.py input.yaml output.yaml --video output.gif
+```
+
 |           Test 1 (Success)           |           Test 2 (Success)           |
 |:------------------------------------:|:------------------------------------:|
 |![Success](./centralized/cbs/results/test_2.gif) | ![Failure](./centralized/cbs/results/test_1.gif)|
