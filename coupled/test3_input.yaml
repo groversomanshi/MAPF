@@ -1,0 +1,54 @@
+agents:
+- name: agent_0
+  start: [0, 0]
+  goal: [14, 14]
+- name: agent_1
+  start: [0, 1]
+  goal: [14, 13]
+- name: agent_2
+  start: [0, 2]
+  goal: [14, 12]
+- name: agent_3
+  start: [0, 12]
+  goal: [14, 2]
+- name: agent_4
+  start: [0, 13]
+  goal: [14, 1]
+- name: agent_5
+  start: [0, 14]
+  goal: [14, 0]
+- name: agent_6
+  start: [7, 0]
+  goal: [7, 14]
+- name: agent_7
+  start: [8, 0]
+  goal: [8, 14]
+- name: agent_8
+  start: [14, 7]
+  goal: [0, 7]
+- name: agent_9
+  start: [14, 8]
+  goal: [0, 8]
+map:
+  dimensions: [15, 15]
+  obstacles:
+  # Central bottleneck blocks
+  - [6, 6]
+  - [6, 7]
+  - [6, 8]
+  - [8, 6]
+  - [8, 7]
+  - [8, 8]
+  - [7, 6]
+  - [7, 8]
+  # Some scattered obstacles to make it "harder"
+  - [3, 3]
+  - [3, 4]
+  - [4, 3]
+  - [10, 10]
+  - [11, 11]
+  - [10, 11]
+  - [2, 10]
+  - [3, 11]
+  - [12, 4]
+  - [11, 3]
