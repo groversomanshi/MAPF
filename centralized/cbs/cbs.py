@@ -12,8 +12,9 @@ import yaml
 from math import fabs
 from itertools import combinations
 from copy import deepcopy
+import os
 
-from cbs.a_star import AStar
+from utils.a_star import SingleAgentAStar, Location as UtilsLoc, VertexConstraint as UtilsVC, EdgeConstraint as UtilsEC
 
 class Location(object):
     def __init__(self, x=-1, y=-1):
@@ -104,8 +105,6 @@ class Environment(object):
 
         self.constraints = Constraints()
         self.constraint_dict = {}
-
-        self.a_star = AStar(self)
 
     def get_neighbors(self, state):
         neighbors = []
@@ -227,10 +226,26 @@ class Environment(object):
         solution = {}
         for agent in self.agent_dict.keys():
             self.constraints = self.constraint_dict.setdefault(agent, Constraints())
-            local_solution = self.a_star.search(agent)
-            if not local_solution:
+            
+            converted_constraints = []
+            for vc in self.constraints.vertex_constraints:
+                converted_constraints.append(UtilsVC(agent, vc.time, UtilsLoc(vc.location.x, vc.location.y)))
+            for ec in self.constraints.edge_constraints:
+                converted_constraints.append(UtilsEC(agent, ec.time, UtilsLoc(ec.location_1.x, ec.location_1.y), UtilsLoc(ec.location_2.x, ec.location_2.y)))
+
+            a_star = SingleAgentAStar(self.dimension, self.obstacles)
+            start = UtilsLoc(self.agent_dict[agent]["start"].location.x, self.agent_dict[agent]["start"].location.y)
+            goal = UtilsLoc(self.agent_dict[agent]["goal"].location.x, self.agent_dict[agent]["goal"].location.y)
+            
+            path = a_star.search(agent, start, goal, converted_constraints)
+            if not path:
                 return False
-            solution.update({agent:local_solution})
+                
+            converted_path = []
+            for s in path:
+                converted_path.append(State(s.time, Location(s.location.x, s.location.y)))
+                
+            solution.update({agent: converted_path})
         return solution
 
     def compute_solution_cost(self, solution):
