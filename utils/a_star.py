@@ -42,6 +42,9 @@ class SingleAgentAStar:
         # plain old a* for one agent under cbs-style constraints
         constraints = constraints or []
         reservation_table = reservation_table or {}
+
+        if not self._valid_state(agent, State(0, start), constraints, reservation_table):
+            return None
         
         open_list = []
         counter = itertools.count()
@@ -59,7 +62,12 @@ class SingleAgentAStar:
             ),
         )
 
-        max_constraint_time = self._max_constraint_time(agent, goal, constraints, reservation_table)
+        max_constraint_time = self._max_constraint_time(
+            agent,
+            goal,
+            constraints,
+            reservation_table,
+        )
 
         while open_list:
             _, _, current = heapq.heappop(open_list)
@@ -108,7 +116,14 @@ class SingleAgentAStar:
         for constraint in constraints:
             if constraint.agent != agent:
                 continue
-            max_time = max(max_time, constraint.time + 1)
+            if isinstance(constraint, VertexConstraint) and constraint.location == goal:
+                max_time = max(max_time, constraint.time + 1)
+            elif (
+                isinstance(constraint, EdgeConstraint)
+                and constraint.location_1 == goal
+                and constraint.location_2 == goal
+            ):
+                max_time = max(max_time, constraint.time + 1)
             
         if reservation_table:
             res_times = [t for t, loc in reservation_table.keys() if loc == (goal.x, goal.y)]
@@ -176,6 +191,11 @@ class JointAgentAStar:
         start_locations = tuple(starts[agent] for agent in agents)
         goal_locations = tuple(goals[agent] for agent in agents)
 
+        if not self._valid_joint_state(agents, 0, start_locations, constraints):
+            return None
+        if self._has_internal_conflict(start_locations, start_locations):
+            return None
+
         open_list = []
         counter = itertools.count()
         start_key = (0, start_locations)
@@ -191,7 +211,7 @@ class JointAgentAStar:
             ),
         )
 
-        max_constraint_time = self._max_constraint_time(set(agents), constraints)
+        max_constraint_time = self._max_constraint_time(agents, goal_locations, constraints)
 
         while open_list:
             _, _, current_key = heapq.heappop(open_list)
@@ -251,12 +271,21 @@ class JointAgentAStar:
         )
 
     @staticmethod
-    def _max_constraint_time(agent_set, constraints):
+    def _max_constraint_time(agents, goals, constraints):
+        goal_by_agent = dict(zip(agents, goals))
         max_time = 0
         for constraint in constraints:
-            if constraint.agent not in agent_set:
+            goal = goal_by_agent.get(constraint.agent)
+            if goal is None:
                 continue
-            max_time = max(max_time, constraint.time + 1)
+            if isinstance(constraint, VertexConstraint) and constraint.location == goal:
+                max_time = max(max_time, constraint.time + 1)
+            elif (
+                isinstance(constraint, EdgeConstraint)
+                and constraint.location_1 == goal
+                and constraint.location_2 == goal
+            ):
+                max_time = max(max_time, constraint.time + 1)
         return max_time
 
     @staticmethod

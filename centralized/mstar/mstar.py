@@ -5,8 +5,6 @@ import argparse
 import yaml
 import heapq
 from itertools import product
-from copy import deepcopy
-from math import fabs
 
 
 class Location(object):
@@ -75,9 +73,8 @@ class Environment(object):
                 (state.location.x, state.location.y) not in self.obstacles)
 
     def admissible_heuristic(self, state, agent):
-        goal = self.agent_dict[agent]["goal"]
-        return fabs(state.location.x - goal.location.x) + \
-               fabs(state.location.y - goal.location.y)
+        loc = (state.location.x, state.location.y)
+        return self._policy_cache[agent].get(loc, float('inf'))
 
     def is_at_goal(self, state, agent):
         goal = self.agent_dict[agent]["goal"]
@@ -138,7 +135,6 @@ class Environment(object):
 class Node:
     def __init__(self):
         self.states = {}
-        self.paths = {}
         self.collisions = frozenset()
         self.cost = 0
         self.h = 0
@@ -152,8 +148,7 @@ class MStar:
     def __init__(self, env):
         self.env = env
         self.open_list = []
-        # Map from node key → Node, so we can reopen nodes after backprop
-        self.node_table = {}
+        self.best_cost = {}
 
     def search(self):
         start = Node()
@@ -161,35 +156,32 @@ class MStar:
         for agent in self.env.agent_dict:
             s = self.env.agent_dict[agent]["start"]
             start.states[agent] = s
-            start.paths[agent] = [s]
 
-        start.cost = 0
+        start.cost = self.solution_cost(start)
         start.h = self.heuristic(start)
         start.collisions = frozenset()
 
+        self.open_list = []
+        self.best_cost = {}
         heapq.heappush(self.open_list, start)
         key = self.hash_node(start)
-        self.node_table[key] = start
-
-        closed = set()
+        self.best_cost[key] = start.cost
 
         while self.open_list:
             curr = heapq.heappop(self.open_list)
+            key = self.hash_node(curr)
+            if curr.cost != self.best_cost.get(key):
+                continue
 
             if self.is_goal(curr):
                 print("solution found")
                 return self.build_plan(curr)
 
-            key = self.hash_node(curr)
-            if key in closed:
-                continue
-            closed.add(key)
-
             for nxt in self.expand(curr):
                 nxt_key = self.hash_node(nxt)
-                if nxt_key not in closed:
+                if nxt.cost < self.best_cost.get(nxt_key, float("inf")):
+                    self.best_cost[nxt_key] = nxt.cost
                     heapq.heappush(self.open_list, nxt)
-                    self.node_table[nxt_key] = nxt
 
         return {}
 
@@ -216,29 +208,23 @@ class MStar:
             else:
                 moves[a] = self.env.optimal_next(node.states[a], a)
 
-        combos = list(product(*[moves[a] for a in agents]))
         new_nodes = []
-
-        for combo in combos:
+        for combo in product(*[moves[a] for a in agents]):
             new_node = Node()
             new_node.parent = node
             new_node.states = dict(zip(agents, combo))
-
-            new_node.paths = deepcopy(node.paths)
-            for a in agents:
-                new_node.paths[a] = node.paths[a] + [new_node.states[a]]
 
             collisions = self.detect_collision(node, new_node)
 
             if collisions:
                 # Backpropagate new collisions up the search tree and reopen ancestors
                 self.backprop(node, collisions)
-                new_node.collisions = node.collisions | collisions
-            else:
-                new_node.collisions = node.collisions
+                continue
+
+            new_node.collisions = frozenset()
 
             # Cost = sum of path lengths so far (sum-of-costs)
-            new_node.cost = sum(len(new_node.paths[a]) for a in agents)
+            new_node.cost = self.solution_cost(new_node)
             new_node.h = self.heuristic(new_node)
 
             new_nodes.append(new_node)
@@ -259,8 +245,12 @@ class MStar:
             return  # Nothing new — stop propagating
 
         node.collisions = node.collisions | new_collisions
+        node.cost = self.solution_cost(node)
+        key = self.hash_node(node)
         # Reopen this node so it gets re-expanded with the updated collision set
-        heapq.heappush(self.open_list, node)
+        if node.cost < self.best_cost.get(key, float("inf")):
+            self.best_cost[key] = node.cost
+            heapq.heappush(self.open_list, node)
         # Recurse upward
         self.backprop(node.parent, new_collisions)
 
@@ -300,13 +290,34 @@ class MStar:
         )
 
     def build_plan(self, node):
+        sequence = []
+        current = node
+        while current is not None:
+            sequence.append(current)
+            current = current.parent
+        sequence.reverse()
+
         plan = {}
-        for agent, path in node.paths.items():
+        for agent in self.env.agent_dict:
+            states = [step.states[agent] for step in sequence]
             plan[agent] = [
-                {'t': s.time, 'x': s.location.x, 'y': s.location.y}
-                for s in path
+                {
+                    't': state.time,
+                    'x': state.location.x,
+                    'y': state.location.y,
+                }
+                for state in self.trim_path_to_goal(agent, states)
             ]
         return plan
+
+    def solution_cost(self, node):
+        return sum(state.time + 1 for state in node.states.values())
+
+    def trim_path_to_goal(self, agent, states):
+        for index, state in enumerate(states):
+            if self.env.is_at_goal(state, agent):
+                return states[:index + 1]
+        return states
 
 
 def main():
