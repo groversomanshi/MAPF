@@ -64,7 +64,7 @@ class Environment(object):
             obstacles: List of obstacle coordinates [(x,y), ...]
         """
         self.dimension = dimension
-        self.obstacles = set(obstacles)  # Set for fast lookup
+        self.obstacles = set(map(tuple, obstacles))  # Set for fast lookup
         self.agents = agents
         self.agent_dict = {}
         self.make_agent_dict()

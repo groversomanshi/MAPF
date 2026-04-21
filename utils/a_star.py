@@ -59,7 +59,7 @@ class SingleAgentAStar:
             ),
         )
 
-        max_constraint_time = self._max_constraint_time(agent, constraints, reservation_table)
+        max_constraint_time = self._max_constraint_time(agent, goal, constraints, reservation_table)
 
         while open_list:
             _, _, current = heapq.heappop(open_list)
@@ -103,7 +103,7 @@ class SingleAgentAStar:
         return abs(location.x - goal.x) + abs(location.y - goal.y)
 
     @staticmethod
-    def _max_constraint_time(agent, constraints, reservation_table):
+    def _max_constraint_time(agent, goal, constraints, reservation_table):
         max_time = 0
         for constraint in constraints:
             if constraint.agent != agent:
@@ -111,7 +111,7 @@ class SingleAgentAStar:
             max_time = max(max_time, constraint.time + 1)
             
         if reservation_table:
-            res_times = [t for t, _ in reservation_table.keys()]
+            res_times = [t for t, loc in reservation_table.keys() if loc == (goal.x, goal.y)]
             if res_times:
                 max_time = max(max_time, max(res_times) + 1)
         return max_time
