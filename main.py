@@ -23,7 +23,15 @@ def main():
 
     dimension = param["map"]["dimensions"]
     obstacles = param["map"]["obstacles"]
-    agents = param["agents"]
+    
+    # Pre-process agents to ignore any malformed entries (e.g. from commented yaml)
+    raw_agents = param.get("agents", [])
+    agents = []
+    for a in raw_agents:
+        if isinstance(a, dict) and "name" in a and "start" in a and "goal" in a:
+            agents.append(a)
+        else:
+            print(f"Warning: Ignored malformed agent config: {a}")
 
     solution = None
     output_data = {}
@@ -96,6 +104,10 @@ def main():
     if not solution:
         print(f"✗ No solution found using {args.algo}")
         return
+
+    output_dir = os.path.dirname(args.output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     with open(args.output, "w") as f:
         yaml.safe_dump(output_data, f)
