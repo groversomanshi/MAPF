@@ -5,6 +5,7 @@ import argparse
 import yaml
 import sys
 import random
+import csv
 from collections import deque, defaultdict
 
 def run_experiment(algo, input_file, output_file):
@@ -28,6 +29,80 @@ def run_experiment(algo, input_file, output_file):
         return False, 60.0, "Timeout (60s)"
     except Exception as e:
         return False, 0, str(e)
+
+def _safe_last_time(steps):
+    if not steps:
+        return 0
+    last = steps[-1]
+    if isinstance(last, dict):
+        return int(last.get("t", 0))
+    return int(getattr(last, "time", 0))
+
+def _compute_schedule_makespan(schedule):
+    if not isinstance(schedule, dict) or not schedule:
+        return None
+    return max(_safe_last_time(steps) for steps in schedule.values())
+
+def _compute_schedule_sum_of_costs(schedule):
+    if not isinstance(schedule, dict) or not schedule:
+        return None
+    return sum(_safe_last_time(steps) for steps in schedule.values())
+
+def extract_output_metrics(output_file):
+    """
+    Extract metrics from an algorithm output YAML (when present).
+
+    Returns a dict with keys: cost, makespan, planning_time_s, sum_of_costs, num_conflicts.
+    Missing/unavailable metrics are returned as "" so they can be written to CSV.
+    """
+    if not output_file or not os.path.exists(output_file):
+        return {
+            "cost": "",
+            "makespan": "",
+            "planning_time_s": "",
+            "sum_of_costs": "",
+            "num_conflicts": "",
+        }
+
+    try:
+        out = load_yaml(output_file) or {}
+    except Exception:
+        return {
+            "cost": "",
+            "makespan": "",
+            "planning_time_s": "",
+            "sum_of_costs": "",
+            "num_conflicts": "",
+        }
+
+    schedule = out.get("schedule")
+    makespan = out.get("makespan")
+    if makespan is None:
+        makespan = _compute_schedule_makespan(schedule)
+
+    sum_of_costs = out.get("sum_of_costs")
+    if sum_of_costs is None:
+        sum_of_costs = _compute_schedule_sum_of_costs(schedule)
+
+    planning_time = out.get("planning_time")
+    if planning_time is None:
+        planning_time_s = ""
+    else:
+        planning_time_s = f"{float(planning_time):.6f}"
+
+    num_conflicts = out.get("num_conflicts", "")
+
+    cost = out.get("cost", "")
+    makespan = "" if makespan is None else makespan
+    sum_of_costs = "" if sum_of_costs is None else sum_of_costs
+
+    return {
+        "cost": cost,
+        "makespan": makespan,
+        "planning_time_s": planning_time_s,
+        "sum_of_costs": sum_of_costs,
+        "num_conflicts": num_conflicts,
+    }
 
 def load_yaml(path):
     with open(path, "r") as f:
@@ -162,6 +237,7 @@ def main():
     maps.add_argument("--runs", type=int, default=1, help="Number of randomized runs per map")
     maps.add_argument("--seed", type=int, default=0, help="Seed for deterministic randomization")
     maps.add_argument("--env_out_dir", default="tests/scalability_envs", help="Where to write generated env YAMLs")
+    maps.add_argument("--results_csv", default="", help="Optional CSV path to write a per-run results table")
 
     args = parser.parse_args()
 
@@ -212,6 +288,7 @@ def main():
         print("-" * 80)
 
         summary = defaultdict(lambda: {"ok": 0, "total": 0, "times": []})
+        rows = []
 
         for map_path in map_files:
             map_name = os.path.splitext(os.path.basename(map_path))[0]
@@ -226,6 +303,20 @@ def main():
                     )
                 except Exception as e:
                     print(f"{map_name:<18} | {run_idx:<4} | {'SKIPPED':<12} | {'N/A':<10} | {e}")
+                    rows.append(
+                        {
+                            "map": map_name,
+                            "run": run_idx,
+                            "algo": args.algo,
+                            "agents": args.agents,
+                            "seed": args.seed,
+                            "status": "SKIPPED",
+                            "time_s": "",
+                            "notes": str(e),
+                            "env_file": "",
+                            "output_file": "",
+                        }
+                    )
                     continue
 
                 out_file = f"tests/out_maps_{args.algo}_{map_name}_agents_{args.agents}_run_{run_idx}.yaml"
@@ -238,7 +329,34 @@ def main():
                 elif not success:
                     notes = "No solution found"
 
+                metrics = extract_output_metrics(out_file) if success else {
+                    "cost": "",
+                    "makespan": "",
+                    "planning_time_s": "",
+                    "sum_of_costs": "",
+                    "num_conflicts": "",
+                }
+
                 print(f"{map_name:<18} | {run_idx:<4} | {status:<12} | {duration:<10.2f} | {notes}")
+                rows.append(
+                    {
+                        "map": map_name,
+                        "run": run_idx,
+                        "algo": args.algo,
+                        "agents": args.agents,
+                        "seed": args.seed,
+                        "status": status,
+                        "time_s": f"{duration:.4f}",
+                        "planning_time_s": metrics["planning_time_s"],
+                        "makespan": metrics["makespan"],
+                        "cost": metrics["cost"],
+                        "sum_of_costs": metrics["sum_of_costs"],
+                        "num_conflicts": metrics["num_conflicts"],
+                        "notes": notes,
+                        "env_file": env_file,
+                        "output_file": out_file,
+                    }
+                )
 
                 summary[map_name]["total"] += 1
                 if success:
@@ -255,6 +373,32 @@ def main():
                 avg = sum(s["times"]) / len(s["times"])
                 print(f"- {map_name}: {s['ok']}/{s['total']} succeeded, avg time {avg:.2f}s")
         print(f"{'='*80}\n")
+
+        if args.results_csv.strip():
+            os.makedirs(os.path.dirname(args.results_csv) or ".", exist_ok=True)
+            fieldnames = [
+                "map",
+                "run",
+                "algo",
+                "agents",
+                "seed",
+                "status",
+                "time_s",
+                "planning_time_s",
+                "makespan",
+                "cost",
+                "sum_of_costs",
+                "num_conflicts",
+                "notes",
+                "env_file",
+                "output_file",
+            ]
+            with open(args.results_csv, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+            print(f"✓ Wrote results CSV to {args.results_csv}\n")
+
         return
 
 if __name__ == "__main__":

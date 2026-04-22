@@ -35,7 +35,21 @@ python3 scalability_analysis.py benchmark --algo mstar
 python3 scalability_analysis.py benchmark --algo mic
 
 # Run the same agent count across maps (randomized starts/goals)
-python3 scalability_analysis.py maps --algo cbs --agents 16 --runs 5 --seed 0
+python3 scalability_analysis.py maps --algo cbs --agents 16 --runs 5 --seed 0 --results_csv tests/results_cbs_agents16_seed0.csv
+
+# run several agents 
+`
+for n in 2 4 8 16 64 128; do
+  python3 scalability_analysis.py maps \
+    --algo ma-cbs \
+    --map_dir main-maps \
+    --agents "$n" \
+    --runs 5 \
+    --seed 0 \
+    --results_csv "tests/results_ma-cbs_agents${n}_seed0.csv"
+done
+`
+
 
 # Restrict to specific maps
 python3 scalability_analysis.py maps --algo cbs --agents 16 --maps open.yaml,narrow-passages.yaml,cluttered.yaml
