@@ -1,6 +1,7 @@
 import argparse
 import heapq
 import itertools
+import time
 import yaml
 
 import sys
@@ -105,6 +106,16 @@ class MACBSEnvironment:
     def compute_solution_cost(solution):
         normalized_solution = MACBSEnvironment.normalize_solution(solution)
         return sum(len(path) for path in normalized_solution.values())
+
+    @staticmethod
+    def compute_sum_of_costs(solution):
+        normalized_solution = MACBSEnvironment.normalize_solution(solution)
+        return sum(path[-1].time for path in normalized_solution.values())
+
+    @staticmethod
+    def compute_makespan(solution):
+        normalized_solution = MACBSEnvironment.normalize_solution(solution)
+        return max(path[-1].time for path in normalized_solution.values())
 
     @staticmethod
     def trim_path(path):
@@ -243,8 +254,13 @@ class MACBS:
         self.merge_bound = merge_bound
         self.open_list = []
         self.counter = itertools.count()
+        self.num_conflicts = 0
 
     def search(self):
+        self.open_list = []
+        self.counter = itertools.count()
+        self.num_conflicts = 0
+
         root = HighLevelNode()
         root.groups = self.env.initial_groups()
         root.solution = self._compute_solution_for_groups(root.groups, root.constraints)
@@ -267,6 +283,7 @@ class MACBS:
                 print("solution found")
                 return self._generate_plan(self.env.normalize_solution(node.solution))
 
+            self.num_conflicts += 1
             group_1 = self._find_group(node.groups, conflict.agent_1)
             group_2 = self._find_group(node.groups, conflict.agent_2)
             pair_key = tuple(sorted((tuple(sorted(group_1)), tuple(sorted(group_2)))))
@@ -377,6 +394,24 @@ class MACBS:
         return plan
 
 
+def build_output(solution, env, planning_time, num_conflicts):
+    final_times = []
+    for path in solution.values():
+        last_step = path[-1]
+        final_times.append(last_step["t"] if isinstance(last_step, dict) else last_step.time)
+
+    sum_of_costs = sum(final_times)
+    return {
+        "schedule": solution,
+        # Keep the legacy field for downstream tools that already expect "cost".
+        "cost": sum_of_costs,
+        "planning_time": planning_time,
+        "makespan": max(final_times),
+        "sum_of_costs": sum_of_costs,
+        "num_conflicts": num_conflicts,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("param", help="input file containing map and obstacles")
@@ -401,16 +436,15 @@ def main():
 
     env = MACBSEnvironment(dimension, agents, obstacles)
     solver = MACBS(env, merge_bound)
+    planning_start = time.perf_counter()
     solution = solver.search()
+    planning_time = time.perf_counter() - planning_start
 
     if not solution:
         print("Solution not found")
         return
 
-    output = {
-        "schedule": solution,
-        "cost": sum(len(path) for path in solution.values()),
-    }
+    output = build_output(solution, env, planning_time, solver.num_conflicts)
 
     with open(args.output, "w") as output_yaml:
         yaml.safe_dump(output, output_yaml)
