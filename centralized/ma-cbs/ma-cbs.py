@@ -103,7 +103,25 @@ class MACBSEnvironment:
 
     @staticmethod
     def compute_solution_cost(solution):
-        return sum(len(path) for path in solution.values())
+        normalized_solution = MACBSEnvironment.normalize_solution(solution)
+        return sum(len(path) for path in normalized_solution.values())
+
+    @staticmethod
+    def trim_path(path):
+        trimmed_path = list(path)
+        while (
+            len(trimmed_path) > 1
+            and trimmed_path[-1].location == trimmed_path[-2].location
+        ):
+            trimmed_path.pop()
+        return trimmed_path
+
+    @classmethod
+    def normalize_solution(cls, solution):
+        return {
+            agent: cls.trim_path(path)
+            for agent, path in solution.items()
+        }
 
     @staticmethod
     def get_state(agent_name, solution, time):
@@ -247,7 +265,7 @@ class MACBS:
             conflict = self.env.get_first_conflict(node.solution, node.groups)
             if conflict is None:
                 print("solution found")
-                return self._generate_plan(node.solution)
+                return self._generate_plan(self.env.normalize_solution(node.solution))
 
             group_1 = self._find_group(node.groups, conflict.agent_1)
             group_2 = self._find_group(node.groups, conflict.agent_2)
