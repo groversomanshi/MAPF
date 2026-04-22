@@ -73,6 +73,9 @@ class SingleAgentAStar:
             _, _, current = heapq.heappop(open_list)
             current_key = (current.time, current.location)
 
+            if g_score.get(current_key, float("inf")) != current.time:
+                continue
+
             # stay alive long enough to clear any future constraints at the goal
             if current.location == goal and current.time >= max_constraint_time:
                 return self._reconstruct_path(current_key, parents)
@@ -216,6 +219,9 @@ class JointAgentAStar:
         while open_list:
             _, _, current_key = heapq.heappop(open_list)
             time, current_locations = current_key
+
+            if g_score.get(current_key, float("inf")) != time * len(agents):
+                continue
 
             # same goal rule as single-agent a*: don't stop before future constraints expire
             if current_locations == goal_locations and time >= max_constraint_time:
