@@ -1,5 +1,6 @@
 import argparse
 import importlib
+import time
 import yaml
 import sys
 import os
@@ -42,10 +43,16 @@ def main():
         MACBS = mod.MACBS
         env = MACBSEnvironment(dimension, agents, obstacles)
         solver = MACBS(env, param.get("merge_bound", 1))
+        planning_start = time.perf_counter()
         solution = solver.search()
+        planning_time = time.perf_counter() - planning_start
         if solution:
-            cost = sum(len(path) for path in solution.values())
-            output_data = {"schedule": solution, "cost": cost}
+            output_data = mod.build_output(
+                solution,
+                env,
+                planning_time,
+                solver.num_conflicts,
+            )
             
     elif args.algo == "cbs":
         mod = importlib.import_module("centralized.cbs.cbs")
