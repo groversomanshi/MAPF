@@ -20,6 +20,18 @@ The recommended way to run all algorithms is through the unified `main.py` entry
 python3 main.py --algo <algorithm> --input <input_yaml> --output <output_yaml> --visualize
 ```
 
+## Scalability Analysis
+
+The `scalability_analysis.py` script allows for benchmarking different algorithms against varying agent counts (2, 4, 8, 16, 64, and 128). It automatically handles environment selection and trimming.
+
+```bash
+# Analyze scalability for M*
+python3 scalability_analysis.py --algo mstar
+
+# Analyze scalability for Meta-agent CBS
+python3 scalability_analysis.py --algo mic
+```
+
 ## Architecture
 
 The project is structured to promote code reuse and a consistent interface across different planning strategies.
@@ -27,6 +39,7 @@ The project is structured to promote code reuse and a consistent interface acros
 ### Directory Structure
 
 - `main.py`: The single entry point for all supported algorithms.
+- `scalability_analysis.py`: Automation script for benchmarking algorithm performance across varying robot counts.
 - `utils/`: Shared utility modules used by multiple algorithms.
   - `a_star.py`: Robust implementations of Single-Agent A* and Joint-Agent A* with support for vertex and edge constraints.
   - `visualize.py`: Unified visualization logic that generates animated GIFs from planning results.
