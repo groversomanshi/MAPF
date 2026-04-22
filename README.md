@@ -22,14 +22,23 @@ python3 main.py --algo <algorithm> --input <input_yaml> --output <output_yaml> -
 
 ## Scalability Analysis
 
-The `scalability_analysis.py` script allows for benchmarking different algorithms against varying agent counts (2, 4, 8, 16, 64, and 128). It automatically handles environment selection and trimming.
+The `scalability_analysis.py` script supports two workflows:
+
+- `benchmark`: benchmark algorithms across varying agent counts by trimming the provided benchmark environments.
+- `maps`: run a fixed agent count on the maps in `main-maps/`, randomizing start/goal positions each run (deterministically via `--seed`).
 
 ```bash
-# Analyze scalability for M*
-python3 scalability_analysis.py --algo mstar
+# Benchmark scalability for M*
+python3 scalability_analysis.py benchmark --algo mstar
 
-# Analyze scalability for Meta-agent CBS
-python3 scalability_analysis.py --algo mic
+# Benchmark scalability for MiC
+python3 scalability_analysis.py benchmark --algo mic
+
+# Run the same agent count across maps (randomized starts/goals)
+python3 scalability_analysis.py maps --algo cbs --agents 16 --runs 5 --seed 0
+
+# Restrict to specific maps
+python3 scalability_analysis.py maps --algo cbs --agents 16 --maps open.yaml,narrow-passages.yaml,cluttered.yaml
 ```
 
 ## Architecture
@@ -39,7 +48,7 @@ The project is structured to promote code reuse and a consistent interface acros
 ### Directory Structure
 
 - `main.py`: The single entry point for all supported algorithms.
-- `scalability_analysis.py`: Automation script for benchmarking algorithm performance across varying robot counts.
+- `scalability_analysis.py`: Automation script for benchmarking across counts and for running fixed-count trials across `main-maps/` with randomized starts/goals.
 - `utils/`: Shared utility modules used by multiple algorithms.
   - `a_star.py`: Robust implementations of Single-Agent A* and Joint-Agent A* with support for vertex and edge constraints.
   - `visualize.py`: Unified visualization logic that generates animated GIFs from planning results.
