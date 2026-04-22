@@ -38,8 +38,14 @@ class SingleAgentAStar:
         self.dimension = dimension
         self.obstacles = set(map(tuple, obstacles))
 
-    def search(self, agent, start, goal, constraints):
+    def search(self, agent, start, goal, constraints=None, reservation_table=None):
         # plain old a* for one agent under cbs-style constraints
+        constraints = constraints or []
+        reservation_table = reservation_table or {}
+
+        if not self._valid_state(agent, State(0, start), constraints, reservation_table):
+            return None
+        
         open_list = []
         counter = itertools.count()
         start_state = State(0, start)
@@ -56,7 +62,12 @@ class SingleAgentAStar:
             ),
         )
 
-        max_constraint_time = self._max_constraint_time(agent, constraints)
+        max_constraint_time = self._max_constraint_time(
+            agent,
+            goal,
+            constraints,
+            reservation_table,
+        )
 
         while open_list:
             _, _, current = heapq.heappop(open_list)
@@ -67,9 +78,9 @@ class SingleAgentAStar:
                 return self._reconstruct_path(current_key, parents)
 
             for neighbor in self._neighbors(current):
-                if not self._valid_state(agent, neighbor, constraints):
+                if not self._valid_state(agent, neighbor, constraints, reservation_table):
                     continue
-                if not self._valid_transition(agent, current, neighbor, constraints):
+                if not self._valid_transition(agent, current, neighbor, constraints, reservation_table):
                     continue
 
                 neighbor_key = (neighbor.time, neighbor.location)
@@ -100,28 +111,59 @@ class SingleAgentAStar:
         return abs(location.x - goal.x) + abs(location.y - goal.y)
 
     @staticmethod
-    def _max_constraint_time(agent, constraints):
+    def _max_constraint_time(agent, goal, constraints, reservation_table):
         max_time = 0
         for constraint in constraints:
             if constraint.agent != agent:
                 continue
-            max_time = max(max_time, constraint.time + 1)
+            if isinstance(constraint, VertexConstraint) and constraint.location == goal:
+                max_time = max(max_time, constraint.time + 1)
+            elif (
+                isinstance(constraint, EdgeConstraint)
+                and constraint.location_1 == goal
+                and constraint.location_2 == goal
+            ):
+                max_time = max(max_time, constraint.time + 1)
+            
+        if reservation_table:
+            res_times = [t for t, loc in reservation_table.keys() if loc == (goal.x, goal.y)]
+            if res_times:
+                max_time = max(max_time, max(res_times) + 1)
         return max_time
 
     @staticmethod
-    def _valid_state(agent, state, constraints):
+    def _valid_state(agent, state, constraints, reservation_table):
         vertex_constraint = VertexConstraint(agent, state.time, state.location)
-        return vertex_constraint not in constraints
+        if vertex_constraint in constraints:
+            return False
+            
+        loc = (state.location.x, state.location.y)
+        if (state.time, loc) in reservation_table:
+            return False
+            
+        return True
 
     @staticmethod
-    def _valid_transition(agent, previous, current, constraints):
+    def _valid_transition(agent, previous, current, constraints, reservation_table):
         edge_constraint = EdgeConstraint(
             agent,
             previous.time,
             previous.location,
             current.location,
         )
-        return edge_constraint not in constraints
+        if edge_constraint in constraints:
+            return False
+            
+        loc1 = (previous.location.x, previous.location.y)
+        loc2 = (current.location.x, current.location.y)
+        t2 = current.time
+        
+        if (t2, loc1) in reservation_table and (t2 - 1, loc2) in reservation_table:
+            for occ in reservation_table.get((t2, loc1), []):
+                if occ in reservation_table.get((t2 - 1, loc2), []):
+                    return False
+        
+        return True
 
     @staticmethod
     def _reconstruct_path(goal_key, parents):
@@ -141,11 +183,18 @@ class JointAgentAStar:
         self.obstacles = set(map(tuple, obstacles))
         self.moves = [(0, 0), (0, 1), (0, -1), (-1, 0), (1, 0)]
 
-    def search(self, agents, starts, goals, constraints):
+    def search(self, agents, starts, goals, constraints=None):
+        constraints = constraints or []
+        
         # this is the coupled planner used after a merge
         agents = tuple(agents)
         start_locations = tuple(starts[agent] for agent in agents)
         goal_locations = tuple(goals[agent] for agent in agents)
+
+        if not self._valid_joint_state(agents, 0, start_locations, constraints):
+            return None
+        if self._has_internal_conflict(start_locations, start_locations):
+            return None
 
         open_list = []
         counter = itertools.count()
@@ -162,7 +211,7 @@ class JointAgentAStar:
             ),
         )
 
-        max_constraint_time = self._max_constraint_time(set(agents), constraints)
+        max_constraint_time = self._max_constraint_time(agents, goal_locations, constraints)
 
         while open_list:
             _, _, current_key = heapq.heappop(open_list)
@@ -222,12 +271,21 @@ class JointAgentAStar:
         )
 
     @staticmethod
-    def _max_constraint_time(agent_set, constraints):
+    def _max_constraint_time(agents, goals, constraints):
+        goal_by_agent = dict(zip(agents, goals))
         max_time = 0
         for constraint in constraints:
-            if constraint.agent not in agent_set:
+            goal = goal_by_agent.get(constraint.agent)
+            if goal is None:
                 continue
-            max_time = max(max_time, constraint.time + 1)
+            if isinstance(constraint, VertexConstraint) and constraint.location == goal:
+                max_time = max(max_time, constraint.time + 1)
+            elif (
+                isinstance(constraint, EdgeConstraint)
+                and constraint.location_1 == goal
+                and constraint.location_2 == goal
+            ):
+                max_time = max(max_time, constraint.time + 1)
         return max_time
 
     @staticmethod

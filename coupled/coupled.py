@@ -64,7 +64,7 @@ class Environment(object):
             obstacles: List of obstacle coordinates [(x,y), ...]
         """
         self.dimension = dimension
-        self.obstacles = set(obstacles)  # Set for fast lookup
+        self.obstacles = set(map(tuple, obstacles))  # Set for fast lookup
         self.agents = agents
         self.agent_dict = {}
         self.make_agent_dict()
@@ -214,7 +214,7 @@ class CoupledPlanner:
     """
     Coupled algorithm for multi-agent path planning.
     
-    Uses A* search in the joint state space to find collision-free paths
+    Uses JointAgentAStar search from utils to find collision-free paths
     for all agents simultaneously.
     """
     
@@ -224,184 +224,38 @@ class CoupledPlanner:
             environment: Environment object with map, agents, obstacles
         """
         self.env = environment
-        self.collision_checker = CollisionChecker()
-    
-    def get_joint_neighbors(self, joint_state):
-        """
-        ⭐ CRITICAL FUNCTION ⭐
-        Generate all VALID neighboring joint states from current joint state.
-        
-        This is where multi-agent coordination happens!
-        
-        Algorithm:
-        1. For each agent, get all possible moves (including staying in place)
-        2. Generate Cartesian product of all individual moves
-        3. Filter out moves with collisions
-        4. Return valid joint moves
-        
-        Returns:
-            List of valid JointState objects
-        """
-        agent_names = self.env.get_agent_names()
-        num_agents = len(agent_names)
-        
-        # Get possible moves for each agent
-        individual_moves = []
-        for i in range(num_agents):
-            agent_loc = joint_state.locations[i]
-            moves = self.env.get_neighbors(agent_loc)
-            individual_moves.append(moves)
-        
-        # Generate Cartesian product of all moves
-        joint_neighbors = []
-        self._generate_joint_moves(individual_moves, 0, [], joint_neighbors, joint_state)
-        
-        return joint_neighbors
-    
-    def _generate_joint_moves(self, individual_moves, agent_idx, current_move, 
-                             result, prev_joint_state):
-        """
-        Recursively generate Cartesian product of individual moves.
-        Filters out invalid moves (collisions) EARLY to prune the search.
-        """
-        if agent_idx == len(individual_moves):
-            # We've made a valid move for all agents
-            result.append(JointState(current_move[:]))
-            return
-        
-        # Try each possible move for agent_idx
-        for move in individual_moves[agent_idx]:
-            # --- EARLY COLLISION CHECK ---
-            collision = False
-            
-            # 1. Vertex collision: check if this move collides with agents already placed in current_move
-            for i in range(agent_idx):
-                if move == current_move[i]:
-                    collision = True
-                    break
-            
-            if collision: continue
-
-            # 2. Edge collision: check if agent_idx swaps with any agent already placed
-            for i in range(agent_idx):
-                # prev_agent_i -> curr_agent_i (current_move[i])
-                # prev_agent_idx -> curr_agent_idx (move)
-                # Swap if: prev_agent_i == move AND prev_agent_idx == current_move[i]
-                if (prev_joint_state.locations[i] == move and 
-                    prev_joint_state.locations[agent_idx] == current_move[i]):
-                    collision = True
-                    break
-            
-            if collision: continue
-            
-            # Move is valid so far, proceed to next agent
-            current_move.append(move)
-            self._generate_joint_moves(individual_moves, agent_idx + 1, current_move, result, prev_joint_state)
-            current_move.pop()
-    
-    def heuristic(self, joint_state):
-        """
-        Admissible heuristic for joint state.
-        
-        IMPORTANT: Must be admissible (never overestimate true cost)!
-        
-        Using: Sum of Manhattan distances to goals
-        This is admissible because each agent's true cost >= its distance to goal.
-        """
-        agent_names = self.env.get_agent_names()
-        total_distance = 0
-        
-        for i, agent_name in enumerate(agent_names):
-            current_loc = joint_state.locations[i]
-            goal_loc = self.env.get_agent_goal(agent_name)
-            
-            # Manhattan distance
-            distance = abs(current_loc.x - goal_loc.x) + abs(current_loc.y - goal_loc.y)
-            total_distance += distance
-        
-        return total_distance
-    
-    def is_goal_state(self, joint_state):
-        """Check if all agents have reached their goals"""
-        agent_names = self.env.get_agent_names()
-        
-        for i, agent_name in enumerate(agent_names):
-            if joint_state.locations[i] != self.env.get_agent_goal(agent_name):
-                return False
-        return True
-    
-    def reconstruct_path(self, came_from, current):
-        """Reconstruct path from dict of parent pointers"""
-        path = [current]
-        while current in came_from:
-            current = came_from[current]
-            path.append(current)
-        return path[::-1]
     
     def solve(self):
         """
-        Main A* search in joint state space.
+        Main A* search using joint state space.
         
         Returns:
             List of JointState objects from start to goal, or None if no solution
         """
+        import os, sys
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+        from utils.a_star import JointAgentAStar, Location as UtilsLoc
+
         agent_names = self.env.get_agent_names()
+        starts = {name: UtilsLoc(self.env.get_agent_start(name).x, self.env.get_agent_start(name).y) for name in agent_names}
+        goals = {name: UtilsLoc(self.env.get_agent_goal(name).x, self.env.get_agent_goal(name).y) for name in agent_names}
         
-        # Create initial joint state (all agents at start positions)
-        start_locations = [self.env.get_agent_start(name) for name in agent_names]
-        initial_state = JointState(start_locations)
+        planner = JointAgentAStar(self.env.dimension, self.env.obstacles)
+        paths = planner.search(agent_names, starts, goals)
         
-        # Create goal state (all agents at goal positions)
-        goal_locations = [self.env.get_agent_goal(name) for name in agent_names]
-        goal_state = JointState(goal_locations)
-        
-        # A* data structures
-        open_set = []
-        heapq.heappush(open_set, (0, initial_state))
-        
-        came_from = {}
-        g_score = {initial_state: 0}
-        f_score = {initial_state: self.heuristic(initial_state)}
-        
-        closed_set = set()
-        
-        step_cost = 1
-        max_iterations = 100000  # Safety limit
-        iterations = 0
-        
-        while open_set and iterations < max_iterations:
-            iterations += 1
+        if paths is None:
+            return None
             
-            # Get state with lowest f_score
-            _, current = heapq.heappop(open_set)
+        length = len(paths[agent_names[0]])
+        joint_solution = []
+        for t in range(length):
+            locations = []
+            for name in agent_names:
+                loc = paths[name][t].location
+                locations.append(Location(loc.x, loc.y))
+            joint_solution.append(JointState(locations))
             
-            if current in closed_set:
-                continue
-            
-            # Check if we reached the goal
-            if self.is_goal_state(current):
-                print(f"✓ Goal reached in {iterations} iterations!")
-                return self.reconstruct_path(came_from, current)
-            
-            closed_set.add(current)
-            
-            # Explore neighbors
-            neighbors = self.get_joint_neighbors(current)
-            
-            for neighbor in neighbors:
-                if neighbor in closed_set:
-                    continue
-                
-                tentative_g = g_score.get(current, float('inf')) + step_cost
-                
-                if neighbor not in g_score or tentative_g < g_score[neighbor]:
-                    came_from[neighbor] = current
-                    g_score[neighbor] = tentative_g
-                    f_score[neighbor] = tentative_g + self.heuristic(neighbor)
-                    heapq.heappush(open_set, (f_score[neighbor], neighbor))
-        
-        print(f"✗ No solution found after {iterations} iterations")
-        return None
+        return joint_solution
 
 
 class SolutionValidator:

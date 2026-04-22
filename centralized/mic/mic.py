@@ -1,9 +1,11 @@
 import sys
-sys.path.insert(0, '../')
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from utils.a_star import SingleAgentAStar, Location as UtilsLoc
 
 import argparse
 import yaml
-import heapq
 from math import fabs
 
 
@@ -77,94 +79,6 @@ class Environment(object):
         return sum(len(p) for p in solution.values())
 
 
-class SpaceTimeAstar(object):
-    """
-    Single-agent A* in space-time with dynamic constraints.
-    Used by MRP-IC to plan each robot sequentially, treating previously
-    planned robots' paths as time-indexed obstacles (reservation table).
-    """
-
-    def __init__(self, env, agent, reservation_table):
-        self.env = env
-        self.agent = agent
-        self.reservation_table = reservation_table
-        self._counter = 0
-
-    def admissible_heuristic(self, state):
-        return self.env.admissible_heuristic(state, self.agent)
-
-    def state_valid(self, state):
-        if not self.env.state_valid(state):
-            return False
-        loc = (state.location.x, state.location.y)
-        t = state.time
-        if (t, loc) in self.reservation_table:
-            return False
-        return True
-
-    def transition_valid(self, s1, s2):
-        loc1 = (s1.location.x, s1.location.y)
-        loc2 = (s2.location.x, s2.location.y)
-        t2 = s2.time
-        # Check edge (swap) collision against all reserved paths
-        if (t2, loc1) in self.reservation_table and \
-                (t2 - 1, loc2) in self.reservation_table:
-            for occ in self.reservation_table.get((t2, loc1), []):
-                if (t2 - 1, loc2) in self.reservation_table and \
-                        occ in self.reservation_table.get((t2 - 1, loc2), []):
-                    return False
-        return True
-
-    def search(self):
-        start = self.env.agent_dict[self.agent]["start"]
-        open_list = []
-        g = {start: 0}
-        came_from = {start: None}
-
-        f = self.admissible_heuristic(start)
-        heapq.heappush(open_list, (f, 0, self._counter, start))
-        self._counter += 1
-
-        closed = set()
-
-        while open_list:
-            _, cost, _, curr = heapq.heappop(open_list)
-
-            if curr in closed:
-                continue
-            closed.add(curr)
-
-            if self.env.is_at_goal(curr, self.agent):
-                return self._reconstruct_path(came_from, curr)
-
-            for nb in self.env.get_neighbors(curr):
-                if nb in closed:
-                    continue
-                if not self.state_valid(nb):
-                    continue
-                if not self.transition_valid(curr, nb):
-                    continue
-
-                tentative_g = cost + 1
-                if tentative_g < g.get(nb, float('inf')):
-                    g[nb] = tentative_g
-                    came_from[nb] = curr
-                    f = tentative_g + self.admissible_heuristic(nb)
-                    heapq.heappush(open_list, (f, tentative_g, self._counter, nb))
-                    self._counter += 1
-
-        return None
-
-    def _reconstruct_path(self, came_from, state):
-        path = []
-        curr = state
-        while curr is not None:
-            path.append(curr)
-            curr = came_from[curr]
-        path.reverse()
-        return path
-
-
 class MiC(object):
     """
     MRP-IC: Multi-Robot Motion Planning by Incremental Coordination.
@@ -205,13 +119,20 @@ class MiC(object):
 
         for agent in agents:
             reservation_table = self._build_reservation_table(committed_paths)
-            planner = SpaceTimeAstar(self.env, agent, reservation_table)
-            path = planner.search()
+            a_star = SingleAgentAStar(self.env.dimension, self.env.obstacles)
+            start = UtilsLoc(self.env.agent_dict[agent]["start"].location.x, self.env.agent_dict[agent]["start"].location.y)
+            goal = UtilsLoc(self.env.agent_dict[agent]["goal"].location.x, self.env.agent_dict[agent]["goal"].location.y)
+            
+            path = a_star.search(agent, start, goal, reservation_table=reservation_table)
 
             if path is None:
                 return {}
 
-            committed_paths[agent] = path
+            converted_path = []
+            for s in path:
+                converted_path.append(State(s.time, Location(s.location.x, s.location.y)))
+
+            committed_paths[agent] = converted_path
 
         print("solution found")
         return committed_paths
