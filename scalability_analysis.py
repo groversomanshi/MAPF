@@ -319,7 +319,10 @@ def main():
                     )
                     continue
 
-                out_file = f"tests/out_maps_{args.algo}_{map_name}_agents_{args.agents}_run_{run_idx}.yaml"
+                out_file = (
+                    f"tests/out_maps_{args.algo}_{map_name}_agents_{args.agents}"
+                    f"_seed_{args.seed}_run_{run_idx}.yaml"
+                )
                 success, duration, log = run_experiment(args.algo, env_file, out_file)
 
                 status = "SUCCESS" if success else "FAILED"

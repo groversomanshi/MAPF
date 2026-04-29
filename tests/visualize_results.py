@@ -153,11 +153,11 @@ def annotate_success_counts(ax, summaries):
         )
 
 
-def make_plot(summaries, output_path):
+def make_plot(summaries, output_path, title):
     map_names = sorted({summary["map"] for summary in summaries})
 
     fig, axes = plt.subplots(2, 3, figsize=(16, 9), constrained_layout=True)
-    fig.suptitle("MA-CBS Scalability Results by Map Type", fontsize=16, weight="bold")
+    fig.suptitle(title, fontsize=16, weight="bold")
 
     plot_metric(
         axes[0][0],
@@ -235,7 +235,7 @@ def print_summary(summaries):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Visualize MA-CBS scalability result CSVs across map types and agent counts."
+        description="Visualize scalability result CSVs across map types and agent counts."
     )
     parser.add_argument("csvs", nargs="+", type=Path, help="Result CSV files to combine")
     parser.add_argument(
@@ -257,11 +257,14 @@ def main():
     if not rows:
         raise SystemExit("No result rows found.")
 
+    algos = sorted({row.get("algo") for row in rows if row.get("algo")})
+    algo_label = ", ".join(algo.upper() for algo in algos) if algos else "Algorithm"
+
     summaries = summarize(rows)
     print_summary(summaries)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    make_plot(summaries, args.output)
+    make_plot(summaries, args.output, f"{algo_label} Scalability Results by Map Type")
     print(f"\nSaved plot to {args.output}")
 
     if args.summary_csv:
