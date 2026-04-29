@@ -35,11 +35,100 @@ python3 scalability_analysis.py benchmark --algo mstar
 python3 scalability_analysis.py benchmark --algo mic
 
 # Run the same agent count across maps (randomized starts/goals)
-python3 scalability_analysis.py maps --algo cbs --agents 16 --runs 5 --seed 0
+python3 scalability_analysis.py maps --algo cbs --agents 16 --runs 5 --seed 0 --results_csv tests/results_cbs_agents16_seed0.csv
 
 # Restrict to specific maps
 python3 scalability_analysis.py maps --algo cbs --agents 16 --maps open.yaml,narrow-passages.yaml,cluttered.yaml
 ```
+
+### Main Maps
+
+The `main-maps/` folder contains the map-only YAML files used by the map scalability workflow:
+
+- `main-maps/open.yaml`
+- `main-maps/narrow-passages.yaml`
+- `main-maps/cluttered.yaml`
+
+| Open | Narrow Passages | Cluttered |
+|:----:|:---------------:|:---------:|
+| ![Open map](./main-maps/map-images/open_map-visualized.png) | ![Narrow passages map](./main-maps/map-images/narrow-passages_map-visualized.png) | ![Cluttered map](./main-maps/map-images/cluttered_map-visualized.png) |
+
+These files define map dimensions and obstacles, but not agents. During scalability runs, `scalability_analysis.py maps` generates randomized start and goal positions for the requested number of agents and writes those generated environments to `tests/scalability_envs/`.
+
+You can visualize the map layouts with:
+
+```bash
+python3 main-maps/visualize_map.py
+```
+
+The generated map images are saved in `main-maps/map-images/`.
+
+### Streamlined Multi-Seed Scalability Runs
+
+For the full map scalability workflow, use `run_scalability_maps.py`. This wraps the repeated `scalability_analysis.py maps` calls, runs every requested agent count and seed, merges seed results into one CSV per agent count, and then calls the results visualizer.
+
+Run the default agent counts (`2,4,8,16,64,128`) with one seed:
+
+```bash
+./run_scalability_maps.py ma-cbs 0
+```
+
+Run the default agent counts with multiple seeds:
+
+```bash
+./run_scalability_maps.py ma-cbs 0 4 123
+```
+
+With three seeds and five runs per map, each map will have 15 rows in each per-agent result CSV.
+
+Common options:
+
+```bash
+# Change the agent counts
+./run_scalability_maps.py ma-cbs 0 4 123 --agents 2,4,8,16
+
+# Change the number of randomized runs per map per seed
+./run_scalability_maps.py ma-cbs 0 4 123 --runs 10
+
+# Run only selected maps
+./run_scalability_maps.py ma-cbs 0 4 123 --maps open.yaml,cluttered.yaml
+
+# Generate CSVs without creating the summary plot
+./run_scalability_maps.py ma-cbs 0 4 123 --skip-plot
+```
+
+For multiple seeds, outputs are named with the seed list:
+
+```text
+tests/results_ma-cbs_agents2_seeds0-4-123.csv
+tests/results_ma-cbs_agents4_seeds0-4-123.csv
+tests/results_ma-cbs_agents8_seeds0-4-123.csv
+tests/results_ma-cbs_agents16_seeds0-4-123.csv
+tests/results_ma-cbs_agents64_seeds0-4-123.csv
+tests/results_ma-cbs_agents128_seeds0-4-123.csv
+tests/results_ma-cbs_seeds0-4-123_summary.png
+tests/results_ma-cbs_seeds0-4-123_summary.csv
+```
+
+The lower-level run output YAML files include the seed in the filename, so results from different seeds do not overwrite each other.
+
+### Visualizing Result CSVs
+
+`tests/visualize_results.py` combines one or more result CSV files, prints a summary by map and agent count, writes a summary CSV, and creates a PNG plot.
+
+```bash
+python3 tests/visualize_results.py \
+  tests/results_ma-cbs_agents2_seed0.csv \
+  tests/results_ma-cbs_agents4_seed0.csv \
+  tests/results_ma-cbs_agents8_seed0.csv \
+  tests/results_ma-cbs_agents16_seed0.csv \
+  tests/results_ma-cbs_agents64_seed0.csv \
+  tests/results_ma-cbs_agents128_seed0.csv \
+  -o tests/results_ma-cbs_summary.png \
+  --summary-csv tests/results_ma-cbs_summary.csv
+```
+
+When using `run_scalability_maps.py`, this visualization step is run automatically unless `--skip-plot` is provided.
 
 ## Architecture
 
@@ -49,6 +138,9 @@ The project is structured to promote code reuse and a consistent interface acros
 
 - `main.py`: The single entry point for all supported algorithms.
 - `scalability_analysis.py`: Automation script for benchmarking across counts and for running fixed-count trials across `main-maps/` with randomized starts/goals.
+- `run_scalability_maps.py`: Streamlined runner for map scalability experiments across multiple agent counts and one or more seeds.
+- `main-maps/`: Map-only YAML files and map visualization assets used by scalability experiments.
+- `tests/visualize_results.py`: Combines scalability result CSVs into a summary CSV and PNG plot.
 - `utils/`: Shared utility modules used by multiple algorithms.
   - `a_star.py`: Robust implementations of Single-Agent A* and Joint-Agent A* with support for vertex and edge constraints.
   - `visualize.py`: Unified visualization logic that generates animated GIFs from planning results.

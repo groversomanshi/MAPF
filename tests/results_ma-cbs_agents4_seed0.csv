@@ -1,0 +1,16 @@
+map,run,algo,agents,seed,status,time_s,planning_time_s,makespan,cost,sum_of_costs,num_conflicts,notes,env_file,output_file
+cluttered,0,ma-cbs,4,0,SUCCESS,0.0466,0.003710,26,89,89,0,,tests/scalability_envs/env_cluttered_agents_4_seed_0_run_0.yaml,tests/out_maps_ma-cbs_cluttered_agents_4_run_0.yaml
+cluttered,1,ma-cbs,4,0,SUCCESS,0.0496,0.005605,46,117,117,0,,tests/scalability_envs/env_cluttered_agents_4_seed_0_run_1.yaml,tests/out_maps_ma-cbs_cluttered_agents_4_run_1.yaml
+cluttered,2,ma-cbs,4,0,SUCCESS,0.0451,0.003388,27,63,63,0,,tests/scalability_envs/env_cluttered_agents_4_seed_0_run_2.yaml,tests/out_maps_ma-cbs_cluttered_agents_4_run_2.yaml
+cluttered,3,ma-cbs,4,0,SUCCESS,9.2420,9.189376,38,116,116,2,,tests/scalability_envs/env_cluttered_agents_4_seed_0_run_3.yaml,tests/out_maps_ma-cbs_cluttered_agents_4_run_3.yaml
+cluttered,4,ma-cbs,4,0,SUCCESS,0.0509,0.006325,47,122,122,0,,tests/scalability_envs/env_cluttered_agents_4_seed_0_run_4.yaml,tests/out_maps_ma-cbs_cluttered_agents_4_run_4.yaml
+narrow-passages,0,ma-cbs,4,0,SUCCESS,0.0446,0.000657,12,32,32,0,,tests/scalability_envs/env_narrow-passages_agents_4_seed_0_run_0.yaml,tests/out_maps_ma-cbs_narrow-passages_agents_4_run_0.yaml
+narrow-passages,1,ma-cbs,4,0,SUCCESS,0.0485,0.002358,6,15,15,2,,tests/scalability_envs/env_narrow-passages_agents_4_seed_0_run_1.yaml,tests/out_maps_ma-cbs_narrow-passages_agents_4_run_1.yaml
+narrow-passages,2,ma-cbs,4,0,SUCCESS,0.0445,0.001470,3,9,9,3,,tests/scalability_envs/env_narrow-passages_agents_4_seed_0_run_2.yaml,tests/out_maps_ma-cbs_narrow-passages_agents_4_run_2.yaml
+narrow-passages,3,ma-cbs,4,0,SUCCESS,0.0514,0.000528,4,13,13,1,,tests/scalability_envs/env_narrow-passages_agents_4_seed_0_run_3.yaml,tests/out_maps_ma-cbs_narrow-passages_agents_4_run_3.yaml
+narrow-passages,4,ma-cbs,4,0,SUCCESS,0.3150,0.262793,13,35,35,3,,tests/scalability_envs/env_narrow-passages_agents_4_seed_0_run_4.yaml,tests/out_maps_ma-cbs_narrow-passages_agents_4_run_4.yaml
+open,0,ma-cbs,4,0,SUCCESS,0.0458,0.007062,38,98,98,0,,tests/scalability_envs/env_open_agents_4_seed_0_run_0.yaml,tests/out_maps_ma-cbs_open_agents_4_run_0.yaml
+open,1,ma-cbs,4,0,SUCCESS,0.0446,0.002062,18,55,55,0,,tests/scalability_envs/env_open_agents_4_seed_0_run_1.yaml,tests/out_maps_ma-cbs_open_agents_4_run_1.yaml
+open,2,ma-cbs,4,0,SUCCESS,0.0429,0.008041,43,96,96,0,,tests/scalability_envs/env_open_agents_4_seed_0_run_2.yaml,tests/out_maps_ma-cbs_open_agents_4_run_2.yaml
+open,3,ma-cbs,4,0,SUCCESS,0.0423,0.008051,37,94,94,0,,tests/scalability_envs/env_open_agents_4_seed_0_run_3.yaml,tests/out_maps_ma-cbs_open_agents_4_run_3.yaml
+open,4,ma-cbs,4,0,SUCCESS,0.0408,0.003702,27,74,74,0,,tests/scalability_envs/env_open_agents_4_seed_0_run_4.yaml,tests/out_maps_ma-cbs_open_agents_4_run_4.yaml
