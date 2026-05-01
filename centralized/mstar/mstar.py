@@ -5,6 +5,8 @@ import argparse
 import yaml
 import heapq
 from itertools import product
+from math import fabs
+import time
 
 
 class Location(object):
@@ -73,8 +75,14 @@ class Environment(object):
                 (state.location.x, state.location.y) not in self.obstacles)
 
     def admissible_heuristic(self, state, agent):
+        # Use precomputed exact cost-to-go if available, else fall back to Manhattan
+        dist = self._policy_cache.get(agent, {})
         loc = (state.location.x, state.location.y)
-        return self._policy_cache[agent].get(loc, float('inf'))
+        if loc in dist:
+            return dist[loc]
+        goal = self.agent_dict[agent]["goal"]
+        return fabs(state.location.x - goal.location.x) + \
+               fabs(state.location.y - goal.location.y)
 
     def is_at_goal(self, state, agent):
         goal = self.agent_dict[agent]["goal"]
@@ -134,11 +142,12 @@ class Environment(object):
 
 class Node:
     def __init__(self):
-        self.states = {}
-        self.collisions = frozenset()
-        self.cost = 0
-        self.h = 0
-        self.parent = None
+        self.states = {}                # agent -> current State
+        self.collisions = frozenset()   # agents involved in any collision at/through this node
+        self.backprop_set = set()       # set of Node objects that have this node as a successor
+        self.cost = 0                   # g: cost so far (sum-of-costs)
+        self.h = 0                      # heuristic cost-to-go
+        self.parent = None              # for path reconstruction
 
     def __lt__(self, other):
         return (self.cost + self.h) < (other.cost + other.h)
@@ -148,39 +157,70 @@ class MStar:
     def __init__(self, env):
         self.env = env
         self.open_list = []
-        self.best_cost = {}
+        # Map from position-key -> Node (one node per joint position)
+        self.node_table = {}
+        self.num_conflicts = 0
+        self.num_backprops = 0
+        self.iterations = 0
+
+    def _pos_key(self, node):
+        """
+        Unique key based solely on joint position (not collision set).
+        Per the paper, each joint configuration maps to exactly one node;
+        the collision set is mutable state on that node.
+        """
+        return tuple(
+            (a, node.states[a].location.x, node.states[a].location.y)
+            for a in sorted(node.states)
+        )
+
+    def _closed_key(self, node):
+        """
+        Key for the closed set that includes the collision set.
+        This is critical: when backprop grows a node's collision set, that node
+        must be re-expanded even if its position was seen before — because it
+        will now generate different (more coupled) successors.
+        """
+        return (self._pos_key(node), node.collisions)
 
     def search(self):
         start = Node()
-
         for agent in self.env.agent_dict:
-            s = self.env.agent_dict[agent]["start"]
-            start.states[agent] = s
+            start.states[agent] = self.env.agent_dict[agent]["start"]
 
-        start.cost = self.solution_cost(start)
+        start.cost = 0
         start.h = self.heuristic(start)
         start.collisions = frozenset()
 
-        self.open_list = []
-        self.best_cost = {}
+        key = self._pos_key(start)
+        self.node_table[key] = start
         heapq.heappush(self.open_list, start)
-        key = self.hash_node(start)
-        self.best_cost[key] = start.cost
+
+        # Closed set keyed on (position, collision_set) so that nodes reopened
+        # with a larger collision set are not skipped — they need re-expansion.
+        closed = set()
 
         while self.open_list:
             curr = heapq.heappop(self.open_list)
-            key = self.hash_node(curr)
-            if curr.cost != self.best_cost.get(key):
-                continue
+            self.iterations += 1
+
+            if self.iterations % 1000 == 0:
+                print(f"iter {self.iterations}, open list size: {len(self.open_list)}, backprops: {self.num_backprops}")
 
             if self.is_goal(curr):
                 print("solution found")
                 return self.build_plan(curr)
 
+            closed_key = self._closed_key(curr)
+            if closed_key in closed:
+                continue
+            closed.add(closed_key)
+
             for nxt in self.expand(curr):
-                nxt_key = self.hash_node(nxt)
-                if nxt.cost < self.best_cost.get(nxt_key, float("inf")):
-                    self.best_cost[nxt_key] = nxt.cost
+                nxt_closed_key = self._closed_key(nxt)
+                if nxt_closed_key not in closed:
+                    # Add curr to nxt's backpropagation set (curr considered nxt as successor)
+                    nxt.backprop_set.add(curr)
                     heapq.heappush(self.open_list, nxt)
 
         return {}
@@ -200,7 +240,8 @@ class MStar:
     def expand(self, node):
         agents = list(self.env.agent_dict.keys())
 
-        # Coupled agents get full neighbor expansion; uncoupled follow optimal policy
+        # Coupled agents (in collision set) get full neighbor expansion;
+        # uncoupled agents follow their individually optimal policy.
         moves = {}
         for a in agents:
             if a in node.collisions:
@@ -208,51 +249,72 @@ class MStar:
             else:
                 moves[a] = self.env.optimal_next(node.states[a], a)
 
+        combos = list(product(*[moves[a] for a in agents]))
         new_nodes = []
-        for combo in product(*[moves[a] for a in agents]):
-            new_node = Node()
-            new_node.parent = node
-            new_node.states = dict(zip(agents, combo))
 
-            collisions = self.detect_collision(node, new_node)
+        for combo in combos:
+            new_states = dict(zip(agents, combo))
 
+            nxt_key = tuple(
+                (a, new_states[a].location.x, new_states[a].location.y)
+                for a in sorted(new_states)
+            )
+
+            # Reuse existing node if we've seen this position before (single node per position)
+            if nxt_key in self.node_table:
+                nxt = self.node_table[nxt_key]
+                new_cost = node.cost + len(agents)
+                # Update if we found a cheaper path to this position
+                if new_cost < nxt.cost:
+                    nxt.cost = new_cost
+                    nxt.parent = node
+                    heapq.heappush(self.open_list, nxt)
+            else:
+                nxt = Node()
+                nxt.states = new_states
+                nxt.cost = node.cost + len(agents)  # each agent takes one step
+                nxt.h = self.heuristic(nxt)
+                nxt.parent = node
+                self.node_table[nxt_key] = nxt
+
+            # Detect collisions in this transition; if found, backpropagate and skip
+            # this successor — it will be reconsidered once the collision set is updated
+            collisions = self.detect_collision(node, nxt)
             if collisions:
-                # Backpropagate new collisions up the search tree and reopen ancestors
                 self.backprop(node, collisions)
                 continue
 
-            new_node.collisions = frozenset()
-
-            # Cost = sum of path lengths so far (sum-of-costs)
-            new_node.cost = self.solution_cost(new_node)
-            new_node.h = self.heuristic(new_node)
-
-            new_nodes.append(new_node)
+            new_nodes.append(nxt)
 
         return new_nodes
 
-    def backprop(self, node, new_collisions):
+    def backprop(self, node, new_collisions, visited=None):
         """
-        Propagate newly discovered colliding agents up through ancestors.
-        Any ancestor whose collision set grows must be reopened so it is
-        re-expanded with the larger coupled set.
+        Propagate newly discovered colliding agents through the backpropagation
+        set (all predecessors that have explored paths through this node), not just
+        the single tree parent.  This matches Section 3 of the paper.
         """
-        if node is None:
+        if visited is None:
+            visited = set()
+
+        if node is None or node in visited:
             return
+
+        visited.add(node)
 
         added = new_collisions - node.collisions
         if not added:
-            return  # Nothing new — stop propagating
+            return  # Nothing new to propagate — stop
 
-        node.collisions = node.collisions | new_collisions
-        node.cost = self.solution_cost(node)
-        key = self.hash_node(node)
-        # Reopen this node so it gets re-expanded with the updated collision set
-        if node.cost < self.best_cost.get(key, float("inf")):
-            self.best_cost[key] = node.cost
-            heapq.heappush(self.open_list, node)
-        # Recurse upward
-        self.backprop(node.parent, new_collisions)
+        self.num_backprops += 1
+        node.collisions |= new_collisions
+        # Reopen this node so it is re-expanded with the updated (larger) collision set.
+        # Because the closed set includes the collision set, this reopened node will
+        # not be skipped — its new (pos, collisions) key won't be in closed yet.
+        heapq.heappush(self.open_list, node)
+        # Recurse to all predecessors in the backpropagation set
+        for pred in node.backprop_set:
+            self.backprop(pred, new_collisions, visited)
 
     def detect_collision(self, prev, curr):
         agents = list(curr.states.keys())
@@ -274,50 +336,30 @@ class MStar:
                         p2.location == c1.location):
                     col |= {a1, a2}
 
+        if col:
+            self.num_conflicts += 1
+
         return frozenset(col)
 
-    def hash_node(self, node):
+    def build_plan(self, goal_node):
         """
-        A node is uniquely identified by the joint position of all agents
-        AND the current collision set (which determines expansion behaviour).
+        Reconstruct paths by walking up the parent chain from the goal node.
         """
-        return (
-            tuple(
-                (a, node.states[a].location.x, node.states[a].location.y)
-                for a in sorted(node.states)
-            ),
-            node.collisions,
-        )
+        # Walk up the parent chain to collect the sequence of joint states
+        chain = []
+        node = goal_node
+        while node is not None:
+            chain.append(node)
+            node = node.parent
+        chain.reverse()
 
-    def build_plan(self, node):
-        sequence = []
-        current = node
-        while current is not None:
-            sequence.append(current)
-            current = current.parent
-        sequence.reverse()
+        plan = {agent: [] for agent in self.env.agent_dict}
+        for t, n in enumerate(chain):
+            for agent in self.env.agent_dict:
+                state = n.states[agent]
+                plan[agent].append({'t': t, 'x': state.location.x, 'y': state.location.y})
 
-        plan = {}
-        for agent in self.env.agent_dict:
-            states = [step.states[agent] for step in sequence]
-            plan[agent] = [
-                {
-                    't': state.time,
-                    'x': state.location.x,
-                    'y': state.location.y,
-                }
-                for state in self.trim_path_to_goal(agent, states)
-            ]
         return plan
-
-    def solution_cost(self, node):
-        return sum(state.time + 1 for state in node.states.values())
-
-    def trim_path_to_goal(self, agent, states):
-        for index, state in enumerate(states):
-            if self.env.is_at_goal(state, agent):
-                return states[:index + 1]
-        return states
 
 
 def main():
@@ -336,15 +378,26 @@ def main():
     env = Environment(dimension, agents, obstacles)
 
     solver = MStar(env)
+
+    start_time = time.perf_counter()
     solution = solver.search()
+    elapsed = time.perf_counter() - start_time
 
     if not solution:
         print("Solution not found")
         return
 
+    cost = env.compute_solution_cost(solution)
+    makespan = max(path[-1]['t'] for path in solution.values())
+
+    print(f"Computation time : {elapsed:.4f}s")
+    print(f"Makespan         : {makespan}")
+    print(f"Cost (sum of path lengths) : {cost}")
+    print(f"Number of conflicts detected : {solver.num_conflicts}")
+
     output = {
         "schedule": solution,
-        "cost": env.compute_solution_cost(solution)
+        "cost": cost
     }
 
     with open(args.output, 'w') as f:

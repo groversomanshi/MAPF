@@ -7,6 +7,7 @@ from utils.a_star import SingleAgentAStar, Location as UtilsLoc
 import argparse
 import yaml
 from math import fabs
+import time
 
 
 class Location(object):
@@ -122,7 +123,7 @@ class MiC(object):
             a_star = SingleAgentAStar(self.env.dimension, self.env.obstacles)
             start = UtilsLoc(self.env.agent_dict[agent]["start"].location.x, self.env.agent_dict[agent]["start"].location.y)
             goal = UtilsLoc(self.env.agent_dict[agent]["goal"].location.x, self.env.agent_dict[agent]["goal"].location.y)
-            
+
             path = a_star.search(agent, start, goal, reservation_table=reservation_table)
 
             if path is None:
@@ -163,7 +164,10 @@ def main():
     env = Environment(dimension, agents, obstacles)
 
     solver = MiC(env)
+
+    start_time = time.perf_counter()
     paths = solver.search()
+    elapsed = time.perf_counter() - start_time
 
     if not paths:
         print("Solution not found")
@@ -171,9 +175,16 @@ def main():
 
     solution = solver.build_plan(paths)
 
+    cost = env.compute_solution_cost(paths)
+    makespan = max(path[-1]['t'] for path in solution.values())
+
+    print(f"Computation time : {elapsed:.4f}s")
+    print(f"Makespan         : {makespan}")
+    print(f"Cost (sum of path lengths) : {cost}")
+
     output = {
         "schedule": solution,
-        "cost": env.compute_solution_cost(paths)
+        "cost": cost
     }
 
     with open(args.output, 'w') as f:
