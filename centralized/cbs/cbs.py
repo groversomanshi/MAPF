@@ -13,6 +13,7 @@ from math import fabs
 from itertools import combinations
 from copy import deepcopy
 import os
+import time
 
 from utils.a_star import SingleAgentAStar, Location as UtilsLoc, VertexConstraint as UtilsVC, EdgeConstraint as UtilsEC
 
@@ -280,23 +281,44 @@ class CBS(object):
             start.constraint_dict[agent] = Constraints()
         start.solution = self.env.compute_solution()
         if not start.solution:
+            # DEBUG:
+            # print(f"[CBS] FAILED: no single-agent solution found")
             return {}
         start.cost = self.env.compute_solution_cost(start.solution)
 
         self.open_set |= {start}
+
+        # DEBUG:
+        # nodes_expanded = 0
+        # replans = 0
+        # search_start = time.perf_counter()
 
         while self.open_set:
             P = min(self.open_set)
             self.open_set -= {P}
             self.closed_set |= {P}
 
+            # DEBUG:
+            # nodes_expanded += 1
+            # if nodes_expanded % 50 == 0:
+            #     elapsed_time = time.perf_counter() - search_start
+            #     print(f"[CBS] expanded = {nodes_expanded} open = {len(self.open_set)}" 
+            #           f" closed = {len(self.closed_set)} cost = {P.cost} elapsed = {elapsed_time:.2f}s")
+
             self.env.constraint_dict = P.constraint_dict
             conflict_dict = self.env.get_first_conflict(P.solution)
             if not conflict_dict:
+                # DEBUG:
+                # print(f"[CBS] SOLUTION FOUND"
+                #       f" expanded = {nodes_expanded} replans = {replans} cost = {P.cost}"
+                #       f" elapsed = {time.perf_counter() - search_start:.2f}s")
                 print("solution found")
 
                 return self.generate_plan(P.solution)
 
+            # DEBUG:
+            # print(f"[CBS] conflict #{nodes_expanded} found: {conflict_dict}")
+            
             constraint_dict = self.env.create_constraints_from_conflict(conflict_dict)
 
             for agent in constraint_dict.keys():
@@ -305,14 +327,25 @@ class CBS(object):
 
                 self.env.constraint_dict = new_node.constraint_dict
                 new_node.solution = self.env.compute_solution()
+                # DEBUG:
+                # replans += 1
+
                 if not new_node.solution:
+                    # DEBUG:
+                    # print(f"[CBS] branch agent = {agent} failed to find solution")
                     continue
                 new_node.cost = self.env.compute_solution_cost(new_node.solution)
+                # DEBUG:
+                # print(f"[CBS] branch agent = {agent} found solution with cost = {new_node.cost}")
 
                 # TODO: ending condition
                 if new_node not in self.closed_set:
                     self.open_set |= {new_node}
 
+        # DEBUG:
+        # print(f"[CBS] NO SOLUTION FOUND"
+        #       f" expanded = {nodes_expanded} replans = {replans}"
+        #       f" elapsed = {time.perf_counter() - search_start:.2f}s")
         return {}
 
     def generate_plan(self, solution):
