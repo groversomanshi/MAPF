@@ -14,6 +14,8 @@ from itertools import combinations
 from copy import deepcopy
 import os
 import time
+import heapq
+import itertools
 
 from utils.a_star import SingleAgentAStar, Location as UtilsLoc, VertexConstraint as UtilsVC, EdgeConstraint as UtilsEC
 
@@ -254,6 +256,18 @@ class Environment(object):
     def compute_solution_cost(self, solution):
         return sum([len(path) for path in solution.values()])
 
+    @staticmethod
+    def constraints_signature(constraint_dict):
+        signature = []
+        for agent in sorted(constraint_dict.keys()):
+            c = constraint_dict[agent]
+            for vc in c.vertex_constraints:
+                signature.append(("v", agent, vc.time, vc.location.x, vc.location.y))
+            for ec in c.edge_constraints:
+                signature.append(("e", agent, ec.time, ec.location_1.x, ec.location_1.y,
+                                ec.location_2.x, ec.location_2.y))
+        return tuple(sorted(signature))
+
 class HighLevelNode(object):
     def __init__(self):
         self.solution = {}
@@ -273,8 +287,9 @@ class HighLevelNode(object):
 class CBS(object):
     def __init__(self, environment):
         self.env = environment
-        self.open_set = set()
-        self.closed_set = set()
+        self.open_list = []
+        self.counter = itertools.count()
+
     def search(self):
         start = HighLevelNode()
         # TODO: Initialize it in a better way
@@ -288,24 +303,28 @@ class CBS(object):
             return {}
         start.cost = self.env.compute_solution_cost(start.solution)
 
-        self.open_set |= {start}
+        heapq.heappush(self.open_list, (start.cost, next(self.counter), start))
 
         # DEBUG:
         nodes_expanded = 0
         replans = 0
         search_start = time.perf_counter()
 
-        while self.open_set:
-            P = min(self.open_set)
-            self.open_set -= {P}
-            self.closed_set |= {P}
+        closed = set()
+
+        while self.open_list:
+            _, _, P = heapq.heappop(self.open_list)
+            sig = Environment.constraints_signature(P.constraint_dict)
+            if sig in closed:
+                continue
+            closed.add(sig)
 
             # DEBUG:
             nodes_expanded += 1
             if nodes_expanded % 50 == 0:
                 elapsed_time = time.perf_counter() - search_start
-                print(f"[CBS] expanded = {nodes_expanded} open = {len(self.open_set)}" 
-                      f" closed = {len(self.closed_set)} cost = {P.cost} elapsed = {elapsed_time:.2f}s")
+                print(f"[CBS] expanded = {nodes_expanded} open = {len(self.open_list)}" 
+                      f" cost = {P.cost} elapsed = {elapsed_time:.2f}s")
 
             self.env.constraint_dict = P.constraint_dict
             conflict_dict = self.env.get_first_conflict(P.solution)
@@ -340,9 +359,7 @@ class CBS(object):
                 # DEBUG:
                 # print(f"[CBS] branch agent = {agent} found solution with cost = {new_node.cost}")
 
-                # TODO: ending condition
-                if new_node not in self.closed_set:
-                    self.open_set |= {new_node}
+                heapq.heappush(self.open_list, (new_node.cost, next(self.counter), new_node))
 
         # DEBUG:
         # print(f"[CBS] NO SOLUTION FOUND"
