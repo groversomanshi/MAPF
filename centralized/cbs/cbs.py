@@ -142,34 +142,37 @@ class Environment(object):
 
     def get_first_conflict(self, solution):
         max_t = max([len(plan) for plan in solution.values()])
-        result = Conflict()
         for t in range(max_t):
+            first_edge_conflict = None
             for agent_1, agent_2 in combinations(solution.keys(), 2):
-                state_1 = self.get_state(agent_1, solution, t)
-                state_2 = self.get_state(agent_2, solution, t)
-                if state_1.is_equal_except_time(state_2):
+                state_1a = self.get_state(agent_1, solution, t)
+                state_2a = self.get_state(agent_2, solution, t)
+
+                if state_1a.is_equal_except_time(state_2a):
+                    result = Conflict()
                     result.time = t
                     result.type = Conflict.VERTEX
-                    result.location_1 = state_1.location
+                    result.location_1 = state_1a.location
                     result.agent_1 = agent_1
                     result.agent_2 = agent_2
                     return result
-
-            for agent_1, agent_2 in combinations(solution.keys(), 2):
-                state_1a = self.get_state(agent_1, solution, t)
+                    
                 state_1b = self.get_state(agent_1, solution, t+1)
-
-                state_2a = self.get_state(agent_2, solution, t)
                 state_2b = self.get_state(agent_2, solution, t+1)
 
-                if state_1a.is_equal_except_time(state_2b) and state_1b.is_equal_except_time(state_2a):
+                if (state_1a.is_equal_except_time(state_2b) and state_1b.is_equal_except_time(state_2a)
+                    and first_edge_conflict is None):
+                    result = Conflict()
                     result.time = t
                     result.type = Conflict.EDGE
                     result.agent_1 = agent_1
                     result.agent_2 = agent_2
                     result.location_1 = state_1a.location
                     result.location_2 = state_1b.location
-                    return result
+                    first_edge_conflict = result
+
+            if first_edge_conflict:
+                return first_edge_conflict
         return False
 
     def create_constraints_from_conflict(self, conflict):
@@ -292,7 +295,6 @@ class HighLevelNode(object):
     def copy(self):
         node = HighLevelNode()
         node.constraint_dict = {agent: c.copy() for agent, c in self.constraint_dict.items()}
-        node.solution = {agent: list(path) for agent, path in self.solution.items()}
         node.cost = self.cost
         return node
 
@@ -304,10 +306,7 @@ class CBS(object):
 
     def search(self):
         start = HighLevelNode()
-        # TODO: Initialize it in a better way
-        start.constraint_dict = {}
-        for agent in self.env.agent_dict.keys():
-            start.constraint_dict[agent] = Constraints()
+        start.constraint_dict = {agent: Constraints() for agent in self.env.agent_dict.keys()}
         start.solution = self.env.compute_solution()
         if not start.solution:
             # DEBUG:
@@ -339,8 +338,8 @@ class CBS(object):
                       f" cost = {P.cost} elapsed = {elapsed_time:.2f}s")
 
             self.env.constraint_dict = P.constraint_dict
-            conflict_dict = self.env.get_first_conflict(P.solution)
-            if not conflict_dict:
+            conflict = self.env.get_first_conflict(P.solution)
+            if not conflict:
                 # DEBUG:
                 # print(f"[CBS] SOLUTION FOUND"
                 #       f" expanded = {nodes_expanded} replans = {replans} cost = {P.cost}"
@@ -350,9 +349,9 @@ class CBS(object):
                 return self.generate_plan(P.solution)
 
             # DEBUG:
-            # print(f"[CBS] conflict #{nodes_expanded} found: {conflict_dict}")
+            # print(f"[CBS] conflict #{nodes_expanded} found: {conflict}")
 
-            constraint_dict = self.env.create_constraints_from_conflict(conflict_dict)
+            constraint_dict = self.env.create_constraints_from_conflict(conflict)
 
             for agent in constraint_dict.keys():
                 new_node = P.copy()
