@@ -7,7 +7,7 @@ import os
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-Agent Path Planning Algorithms")
-    parser.add_argument("--algo", choices=["ma-cbs", "cbs", "mic", "mstar", "coupled"], required=True)
+    parser.add_argument("--algo", choices=["ma-cbs", "cbs", "mic", "mstar", "coupled", "pibt"], required=True)
     parser.add_argument("--input", required=True, help="Input YAML file")
     parser.add_argument("--output", required=True, help="Output YAML file")
     parser.add_argument("--visualize", action="store_true", help="Generate visualization video")
@@ -107,6 +107,17 @@ def main():
                     loc = js.locations[i]
                     schedule[name].append({"t": t, "x": loc.x, "y": loc.y})
             output_data = {"schedule": schedule, "cost": cost}
+
+    elif args.algo == "pibt":
+        mod = importlib.import_module("decentralized.pibt.pibt")
+        Environment = mod.Environment
+        PIBT = mod.PIBT
+        env = Environment(dimension, agents, obstacles)
+        solver = PIBT(env)
+        solution = solver.search(param.get("max_timesteps"))
+        if solution:
+            cost = env.compute_solution_cost(solution)
+            output_data = {"schedule": solution, "cost": cost}
 
     if not solution:
         print(f"✗ No solution found using {args.algo}")
