@@ -175,6 +175,22 @@ class Environment(object):
                 return first_edge_conflict
         return False
 
+    def count_conflicts(self, solution):
+        count = 0
+        max_t = max([len(plan) for plan in solution.values()])
+        for t in range(max_t):
+            for agent_1, agent_2 in combinations(solution.keys(), 2):
+                state_1a = self.get_state(agent_1, solution, t)
+                state_2a = self.get_state(agent_2, solution, t)
+                if state_1a.is_equal_except_time(state_2a):
+                    count += 1
+
+                state_1b = self.get_state(agent_1, solution, t+1)
+                state_2b = self.get_state(agent_2, solution, t+1)
+                if (state_1a.is_equal_except_time(state_2b) and state_1b.is_equal_except_time(state_2a)):
+                    count += 1
+        return count
+
     def create_constraints_from_conflict(self, conflict):
         constraint_dict = {}
         if conflict.type == Conflict.VERTEX:
@@ -282,13 +298,6 @@ class HighLevelNode(object):
         self.constraint_dict = {}
         self.cost = 0
 
-    def __eq__(self, other):
-        if not isinstance(other, type(self)): return NotImplemented
-        return self.solution == other.solution and self.cost == other.cost
-
-    def __hash__(self):
-        return hash((self.cost))
-
     def __lt__(self, other):
         return self.cost < other.cost
 
@@ -303,6 +312,7 @@ class CBS(object):
         self.env = environment
         self.open_list = []
         self.counter = itertools.count()
+        self.use_bypass = False
 
     def search(self):
         start = HighLevelNode()
@@ -350,8 +360,13 @@ class CBS(object):
 
             # DEBUG:
             # print(f"[CBS] conflict #{nodes_expanded} found: {conflict}")
-
+            
             constraint_dict = self.env.create_constraints_from_conflict(conflict)
+            
+            if self.use_bypass:
+                parent_conflicts = self.env.count_conflicts(P.solution)
+                bypass_node = None
+                children = []
 
             for agent in constraint_dict.keys():
                 new_node = P.copy()
@@ -367,10 +382,25 @@ class CBS(object):
                     # print(f"[CBS] branch agent = {agent} failed to find solution")
                     continue
                 new_node.cost = self.env.compute_solution_cost(new_node.solution)
+                               
                 # DEBUG:
                 # print(f"[CBS] branch agent = {agent} found solution with cost = {new_node.cost}")
 
-                heapq.heappush(self.open_list, (new_node.cost, next(self.counter), new_node))
+                if self.use_bypass:
+                    child_conflicts = self.env.count_conflicts(new_node.solution)
+                    if new_node.cost == P.cost and child_conflicts < parent_conflicts:
+                        bypass_node = new_node
+                        break
+                    children.append(new_node)
+                else:
+                    heapq.heappush(self.open_list, (new_node.cost, next(self.counter), new_node))
+
+            if self.use_bypass:
+                if bypass_node:
+                    heapq.heappush(self.open_list, (bypass_node.cost, next(self.counter), bypass_node))
+                else:
+                    for child in children:
+                        heapq.heappush(self.open_list, (child.cost, next(self.counter), child))
 
         # DEBUG:
         # print(f"[CBS] NO SOLUTION FOUND"
