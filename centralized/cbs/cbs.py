@@ -11,7 +11,6 @@ import argparse
 import yaml
 from math import fabs
 from itertools import combinations
-from copy import deepcopy
 import os
 import time
 import heapq
@@ -95,6 +94,12 @@ class Constraints(object):
     def __str__(self):
         return "VC: " + str([str(vc) for vc in self.vertex_constraints])  + \
             "EC: " + str([str(ec) for ec in self.edge_constraints])
+
+    def copy(self):
+        c = Constraints()
+        c.vertex_constraints = set(self.vertex_constraints)
+        c.edge_constraints = set(self.edge_constraints)
+        return c
 
 class Environment(object):
     def __init__(self, dimension, agents, obstacles):
@@ -284,6 +289,13 @@ class HighLevelNode(object):
     def __lt__(self, other):
         return self.cost < other.cost
 
+    def copy(self):
+        node = HighLevelNode()
+        node.constraint_dict = {agent: c.copy() for agent, c in self.constraint_dict.items()}
+        node.solution = {agent: list(path) for agent, path in self.solution.items()}
+        node.cost = self.cost
+        return node
+
 class CBS(object):
     def __init__(self, environment):
         self.env = environment
@@ -343,7 +355,7 @@ class CBS(object):
             constraint_dict = self.env.create_constraints_from_conflict(conflict_dict)
 
             for agent in constraint_dict.keys():
-                new_node = deepcopy(P)
+                new_node = P.copy()
                 new_node.constraint_dict[agent].add_constraint(constraint_dict[agent])
 
                 self.env.constraint_dict = new_node.constraint_dict
