@@ -120,7 +120,9 @@ class PIBT:
     def search(self, max_timesteps=None):
         if max_timesteps is None:
             width, height = self.env.dimension
-            max_timesteps = 4 * width * height + len(self.env.agent_dict)
+            num_agents = len(self.env.agent_dict)
+            diam = (width - 1) + (height - 1)
+            max_timesteps = diam * num_agents
 
         self.positions = {agent: data['start'] for agent, data in self.env.agent_dict.items()}
         paths = {agent: [loc] for agent, loc in self.positions.items()}
