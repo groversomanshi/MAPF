@@ -225,12 +225,12 @@ def main():
     sub = parser.add_subparsers(dest="mode", required=True)
 
     bench = sub.add_parser("benchmark", help="Run scalability across agent counts by trimming benchmark environments.")
-    bench.add_argument("--algo", required=True, help="Algorithm to test (cbs, mstar, mic, coupled, ma-cbs, pibt)")
+    bench.add_argument("--algo", required=True, help="Algorithm to test (cbs, mstar, mic, coupled, ma-cbs, pibt, cbswp)")
     bench.add_argument("--env_dir", default="centralized/benchmark/32x32_obst204", help="Directory containing benchmark YAMLs")
     bench.add_argument("--robot_counts", default="2,4,8,16,64,128", help="Comma-separated robot counts to test")
 
     maps = sub.add_parser("maps", help="Run a fixed agent count on one or more maps with randomized starts/goals.")
-    maps.add_argument("--algo", required=True, help="Algorithm to test (cbs, mstar, mic, coupled, ma-cbs, pibt)")
+    maps.add_argument("--algo", required=True, help="Algorithm to test (cbs, mstar, mic, coupled, ma-cbs, pibt, cbswp)")
     maps.add_argument("--map_dir", default="main-maps", help="Directory containing map YAMLs (map only, no agents)")
     maps.add_argument("--maps", default="", help="Comma-separated map YAML filenames to use (default: all in map_dir)")
     maps.add_argument("--agents", type=int, required=True, help="Number of agents for each run")
